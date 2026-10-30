@@ -1,0 +1,32 @@
+{
+  "title": "The Basement Bar",
+  "tagline": "Pull up a stool",
+  "mode": "ticker",
+  "taps": [
+    { "id": "t1", "name": "Genesee Cream Ale", "brewery": "Genesee Brewery", "style": "Cream Ale", "abv": "5.1", "price": "$4", "out": false },
+    { "id": "t2", "name": "Guinness Draught", "brewery": "Guinness", "style": "Irish Stout", "abv": "4.2", "price": "$6", "out": false },
+    { "id": "t3", "name": "Allagash White", "brewery": "Allagash Brewing", "style": "Witbier", "abv": "5.2", "price": "$6", "out": false },
+    { "id": "t4", "name": "Hazy Little Thing", "brewery": "Sierra Nevada", "style": "Hazy IPA", "abv": "6.7", "price": "$6", "out": false },
+    { "id": "t5", "name": "Yuengling Lager", "brewery": "Yuengling", "style": "Amber Lager", "abv": "4.5", "price": "$4", "out": false },
+    { "id": "t6", "name": "Seasonal Pumpkin Ale", "brewery": "Rotating guest", "style": "Pumpkin Ale", "abv": "5.5", "price": "$6", "out": true }
+  ],
+  "sections": [
+    {
+      "id": "s1",
+      "title": "Tonight's Specials",
+      "items": [
+        { "id": "i1", "name": "Old Fashioned", "price": "$9", "desc": "Bourbon, demerara, bitters, orange peel", "hide": false },
+        { "id": "i2", "name": "Bushmills & Ginger", "price": "$8", "desc": "Irish whiskey, ginger beer, lime", "hide": false }
+      ]
+    },
+    {
+      "id": "s2",
+      "title": "In the Fridge",
+      "items": [
+        { "id": "i3", "name": "Hard Seltzer", "price": "$4", "desc": "Mixed cans, ask what's cold", "hide": false },
+        { "id": "i4", "name": "Soda & Water", "price": "Free", "desc": "", "hide": false },
+        { "id": "i5", "name": "Leftover Pizza", "price": "Free", "desc": "Reheated on request", "hide": false }
+      ]
+    }
+  ]
+}
