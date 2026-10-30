@@ -23,6 +23,7 @@ The TV re-reads `menu.json` every 2 minutes and does a full page reload every 6 
 Remote shortcuts on the display:
 - **Select / OK**: toggle fullscreen
 - **Play / Pause**: reload `menu.json` now
+- **Up / Down**: shrink or grow the edge margin, so your TV doesn't crop the edges of the picture. A dashed gold outline shows the edge while you adjust. The setting is saved on the FireStick. It starts at 5%; you can also set it in the address, e.g. `…/basementtvdisplay/?inset=4`.
 
 ## Editing the menu
 

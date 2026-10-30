@@ -5,6 +5,9 @@
   var DATA_URL = 'menu.json';
   var POLL_MS = 2 * 60 * 1000;
   var GH_KEY = 'basementtv.github';
+  var INSET_KEY = 'basementtv.inset';
+  var INSET_DEFAULT = 5, INSET_MAX = 15;
+  var inset = loadInset();
 
   var state = norm({});
   var baseline = '';
@@ -77,8 +80,13 @@
   function head() {
     return '<div class="hd"><div><div class="ttl">' + esc(state.title) + '</div>' +
       (state.tagline ? '<div class="sub">' + esc(state.tagline) + '</div>' : '') +
-      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div></div>';
+      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div>' + WAVES + '</div>';
   }
+  var WAVES = '<svg class="waves" viewBox="0 0 1280 34" preserveAspectRatio="none" aria-hidden="true">' +
+    '<path fill="#2c93bf" d="M0 6 C80 0 160 14 240 8 S400 0 480 8 S640 16 720 8 S880 0 960 8 S1120 16 1200 8 S1260 4 1280 6 V34 H0Z"/>' +
+    '<path fill="#1f7fa8" d="M0 14 C90 8 170 20 260 14 S430 6 520 14 S690 22 780 14 S950 6 1040 14 S1200 22 1280 14 V34 H0Z"/>' +
+    '<path fill="#f7f1df" opacity=".9" d="M0 24 C70 20 140 28 210 24 S350 18 420 24 S560 30 630 24 S770 18 840 24 S980 30 1050 24 S1190 18 1280 24 V27 C1190 21 1120 30 1050 27 S910 21 840 27 S700 33 630 27 S490 21 420 27 S280 33 210 27 S70 23 0 27Z"/>' +
+    '<path fill="#e6cf9f" d="M0 27 C70 23 140 33 210 27 S350 21 420 27 S560 33 630 27 S770 21 840 27 S980 33 1050 27 S1190 21 1280 27 V34 H0Z"/></svg>';
   function tapsHTML() {
     if (!state.taps.length) return '<div class="empty">No taps listed</div>';
     return state.taps.map(function (t, i) {
@@ -112,8 +120,8 @@
         '<div class="tm"><span class="sk"></span><span class="sc">&ndash;</span></div>' +
         '<div class="tm"><span class="sk"></span><span class="sc">&ndash;</span></div></div>';
     }
-    return '<div class="main"><div class="scwrap"><div class="lbl">Scoreboard</div><div class="games">' + g +
-      '</div><div class="stub">Live scores are not connected yet. This is the layout placeholder.</div></div></div>';
+    return '<div class="main"><div class="board wide"><div class="col"><div class="lbl">Scoreboard</div><div class="games">' + g +
+      '</div><div class="stub">Live scores are not connected yet. This is the layout placeholder.</div></div></div></div>';
   }
   function ticker() {
     var seg = '<span class="ti">Live scores will scroll here</span><span class="ti-d"></span>';
@@ -124,7 +132,8 @@
   function renderDisplay() {
     document.body.className = 'tv';
     var body = state.mode === 'scores' ? scoresBody() :
-      '<div class="main"><div class="col col-l"><div class="lbl">On Tap</div>' + tapsHTML() + '</div><div class="col">' + sectionsHTML() + '</div></div>';
+      '<div class="main"><div class="board"><div class="col"><div class="lbl">On Tap</div>' + tapsHTML() + '</div></div>' +
+      '<div class="board"><div class="col">' + sectionsHTML() + '</div></div></div>';
     app.innerHTML = '<div id="screen"><div class="stage" id="stage">' + head() + body + (state.mode === 'ticker' ? ticker() : '') +
       '</div></div><a class="editpill" href="#edit">Edit</a>';
     fit(); clock(); markMore();
@@ -132,8 +141,27 @@
   function fit() {
     var s = document.getElementById('screen'), st = document.getElementById('stage');
     if (!s || !st) return;
-    var k = Math.min(s.clientWidth / 1280, s.clientHeight / 720);
+    // Shrink the stage by the overscan margin on every side so TVs that crop the picture don't cut off the edges.
+    var f = 1 - 2 * inset / 100;
+    var k = Math.min(s.clientWidth * f / 1280, s.clientHeight * f / 720);
     st.style.transform = 'translate(-50%,-50%) scale(' + k + ')';
+  }
+  function loadInset() {
+    var q = /[?&]inset=([\d.]+)/.exec(location.search), v;
+    if (q) { v = parseFloat(q[1]); try { localStorage.setItem(INSET_KEY, String(v)); } catch (e) {} }
+    else { try { v = parseFloat(localStorage.getItem(INSET_KEY)); } catch (e) {} }
+    return isFinite(v) ? Math.max(0, Math.min(INSET_MAX, v)) : INSET_DEFAULT;
+  }
+  var calibTimer = null;
+  function nudgeInset(d) {
+    inset = Math.max(0, Math.min(INSET_MAX, Math.round((inset + d) * 2) / 2));
+    try { localStorage.setItem(INSET_KEY, String(inset)); } catch (e) {}
+    fit();
+    var st = document.getElementById('stage');
+    if (st) st.classList.add('calib');
+    clearTimeout(calibTimer);
+    calibTimer = setTimeout(function () { var s = document.getElementById('stage'); if (s) s.classList.remove('calib'); }, 3000);
+    toast('Edge margin ' + inset + '%  ·  Up = smaller, Down = bigger');
   }
   function markMore() {
     var cols = app.querySelectorAll('.col');
@@ -150,8 +178,10 @@
     t.textContent = n.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     d.textContent = n.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
   }
+  var lastToast = null;
   function toast(msg) {
-    var el = document.createElement('div');
+    if (lastToast && lastToast.parentNode) lastToast.parentNode.removeChild(lastToast);
+    var el = lastToast = document.createElement('div');
     el.className = 'toast'; el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(function () { el.style.opacity = '0'; }, 2500);
@@ -185,6 +215,9 @@
     // Fire TV remote: Select/OK arrives as Enter, Play/Pause as MediaPlayPause (179).
     if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23) { e.preventDefault(); toggleFullscreen(); keepAwake(); }
     else if (e.key === 'MediaPlayPause' || e.keyCode === 179) { e.preventDefault(); toast('Refreshing menu…'); poll(); }
+    // Up grows the picture (less margin), Down shrinks it, to dial in the TV's overscan.
+    else if (e.key === 'ArrowUp' || e.keyCode === 38) { e.preventDefault(); nudgeInset(-0.5); }
+    else if (e.key === 'ArrowDown' || e.keyCode === 40) { e.preventDefault(); nudgeInset(0.5); }
   });
   document.addEventListener('visibilitychange', keepAwake);
 
