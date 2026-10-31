@@ -1,142 +1,170 @@
 (function () {
   'use strict';
   var app = document.getElementById('app');
-  var MODES = { menu: 'Menu', ticker: 'Menu + scores ticker', scores: 'Scoreboard' };
-  var DATA_URL = 'menu.json';
-  var POLL_MS = 2 * 60 * 1000;
-  var GH_KEY = 'basementtv.github';
+
+  // The Google Sheet that holds the menu. It must be shared as "Anyone with the link: Viewer".
+  var SHEET_ID = '1MRG1xUpZEYDi8NpmIcatDR8UpHEttfFGdvJxjh2BX7E';
+  var SHEET_EDIT_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit';
+  var POLL_MS = 60 * 1000;
+  var CACHE_KEY = 'basementtv.last';
   var INSET_KEY = 'basementtv.inset';
   var INSET_DEFAULT = 5, INSET_MAX = 15;
+  var MODES = { 'menu': 'menu', 'menu + scores ticker': 'ticker', 'ticker': 'ticker', 'scoreboard': 'scores', 'scores': 'scores' };
+
   var inset = loadInset();
+  var state = null;
+  var current = '';
+  var failed = false;
 
-  var state = norm({});
-  var baseline = '';
-  var busy = false, editing = false, note = '', noteErr = false, loaded = false;
-  var gh = loadGh();
-
-  function norm(s) {
-    s = s || {};
-    s.title = s.title || 'The Basement Bar';
-    s.tagline = s.tagline || '';
-    s.mode = MODES[s.mode] ? s.mode : 'menu';
-    s.taps = s.taps || [];
-    s.sections = s.sections || [];
-    s.sections.forEach(function (sec) { sec.items = sec.items || []; });
-    delete s.rev;
-    return s;
-  }
   function esc(x) {
     return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-  function uid() { return 'x' + Math.random().toString(36).slice(2, 8); }
-  function find(arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i]; return null; }
-  function serialize(s) { return JSON.stringify(s, null, 2) + '\n'; }
 
-  /* ---------- data ---------- */
+  /* ---------- data (Google Sheet) ---------- */
+  function tabUrl(tab) {
+    return 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:csv&headers=1&sheet=' +
+      encodeURIComponent(tab) + '&t=' + Date.now();
+  }
+  function fetchTab(tab) {
+    return fetch(tabUrl(tab), { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error(tab + ': HTTP ' + r.status);
+      return r.text();
+    }).then(function (t) {
+      // A sheet that isn't shared publicly answers with a Google sign-in page instead of CSV.
+      if (/^\s*</.test(t)) throw new Error(tab + ': sheet is not shared publicly');
+      return rows(parseCSV(t));
+    });
+  }
+  function parseCSV(text) {
+    var out = [], row = [], cell = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); out.push(row); row = []; cell = '';
+      } else cell += c;
+    }
+    if (cell || row.length) { row.push(cell); out.push(row); }
+    return out;
+  }
+  // Turn CSV rows into objects keyed by lowercased header, so columns can be reordered in the sheet.
+  function rows(csv) {
+    if (!csv.length) return [];
+    var keys = csv[0].map(function (h) { return h.trim().toLowerCase(); });
+    return csv.slice(1).map(function (r) {
+      var o = {};
+      keys.forEach(function (k, i) { o[k] = (r[i] || '').trim(); });
+      return o;
+    });
+  }
+  function pick(o, names) {
+    for (var i = 0; i < names.length; i++) if (o[names[i]]) return o[names[i]];
+    return '';
+  }
+  function yes(v) { return /^(true|yes|y|x|1)$/i.test(String(v || '').trim()); }
+
   function fetchMenu() {
-    // Query string busts the GitHub Pages CDN cache (max-age=600) so edits show up within one poll.
-    return fetch(DATA_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    }).then(norm);
-  }
-
-  /* ---------- github ---------- */
-  function loadGh() {
-    var g = {};
-    try { g = JSON.parse(localStorage.getItem(GH_KEY)) || {}; } catch (e) {}
-    // On https://OWNER.github.io/REPO/ the owner and repo can be inferred.
-    var m = /^([^.]+)\.github\.io$/i.exec(location.hostname);
-    if (!g.owner && m) g.owner = m[1];
-    if (!g.repo && m) { var p = location.pathname.split('/').filter(Boolean)[0]; g.repo = p && !/\./.test(p) ? p : m[1] + '.github.io'; }
-    g.branch = g.branch || 'main';
-    g.token = g.token || '';
-    return g;
-  }
-  function saveGh() { try { localStorage.setItem(GH_KEY, JSON.stringify(gh)); } catch (e) {} }
-  function ghReady() { return !!(gh.owner && gh.repo && gh.token); }
-  function ghUrl() { return 'https://api.github.com/repos/' + encodeURIComponent(gh.owner) + '/' + encodeURIComponent(gh.repo) + '/contents/' + DATA_URL; }
-  function ghReq(method, url, body) {
-    return fetch(url, {
-      method: method, cache: 'no-store',
-      headers: { 'Authorization': 'Bearer ' + gh.token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined
-    }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) { var e = new Error(j.message || ('HTTP ' + r.status)); e.status = r.status; throw e; }
-        return j;
+    // A missing Teams tab only turns off scores; it shouldn't take the menu down with it.
+    var teamsTab = fetchTab('Teams').catch(function () { return []; });
+    return Promise.all([fetchTab('Taps'), fetchTab('Menu'), fetchTab('Settings'), teamsTab]).then(function (res) {
+      var taps = res[0], items = res[1], settings = {};
+      res[2].forEach(function (r) { var k = pick(r, ['setting']).toLowerCase(); if (k) settings[k] = pick(r, ['value']); });
+      var sections = [], byName = {};
+      items.forEach(function (r) {
+        var name = pick(r, ['item', 'name']);
+        if (!name || yes(r.hide)) return;
+        var title = pick(r, ['section']) || 'Specials';
+        var sec = byName[title];
+        if (!sec) { sec = byName[title] = { title: title, items: [] }; sections.push(sec); }
+        sec.items.push({ name: name, price: pick(r, ['price']), desc: pick(r, ['description', 'desc']) });
       });
+      return {
+        title: settings['bar name'] || 'The Basement Bar',
+        tagline: settings['tagline'] || '',
+        mode: MODES[(settings['screen'] || '').toLowerCase()] || 'scores',
+        taps: taps.filter(function (r) { return pick(r, ['beer', 'name']); }).map(function (r) {
+          return { name: pick(r, ['beer', 'name']), brewery: r.brewery || '', style: r.style || '',
+            abv: pick(r, ['abv %', 'abv']), price: r.price || '', out: yes(r.kicked) };
+        }),
+        sections: sections,
+        teams: res[3].filter(function (r) { return r.league && r.team; }).map(function (r) {
+          // Celebrate defaults to on; only an explicit unticked box turns it off.
+          return { league: r.league, team: r.team, celebrate: !/^(false|no|n|0)$/i.test(r.celebrate || '') };
+        })
+      };
     });
   }
-  function b64enc(str) { return btoa(unescape(encodeURIComponent(str))); }
-  function b64dec(str) { return decodeURIComponent(escape(atob(String(str).replace(/\s/g, '')))); }
-  function ghRead() {
-    return ghReq('GET', ghUrl() + '?ref=' + encodeURIComponent(gh.branch)).then(function (j) {
-      return { sha: j.sha, data: norm(JSON.parse(b64dec(j.content))) };
-    });
+  function loadCache() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) { return null; }
   }
+  function saveCache(j) { try { localStorage.setItem(CACHE_KEY, j); } catch (e) {} }
 
   /* ---------- display ---------- */
-  function head() {
-    return '<div class="hd"><div><div class="ttl">' + esc(state.title) + '</div>' +
-      (state.tagline ? '<div class="sub">' + esc(state.tagline) + '</div>' : '') +
-      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div>' + WAVES + '</div>';
-  }
   var WAVES = '<svg class="waves" viewBox="0 0 1280 34" preserveAspectRatio="none" aria-hidden="true">' +
     '<path fill="#2c93bf" d="M0 6 C80 0 160 14 240 8 S400 0 480 8 S640 16 720 8 S880 0 960 8 S1120 16 1200 8 S1260 4 1280 6 V34 H0Z"/>' +
     '<path fill="#1f7fa8" d="M0 14 C90 8 170 20 260 14 S430 6 520 14 S690 22 780 14 S950 6 1040 14 S1200 22 1280 14 V34 H0Z"/>' +
     '<path fill="#f7f1df" opacity=".9" d="M0 24 C70 20 140 28 210 24 S350 18 420 24 S560 30 630 24 S770 18 840 24 S980 30 1050 24 S1190 18 1280 24 V27 C1190 21 1120 30 1050 27 S910 21 840 27 S700 33 630 27 S490 21 420 27 S280 33 210 27 S70 23 0 27Z"/>' +
     '<path fill="#e6cf9f" d="M0 27 C70 23 140 33 210 27 S350 21 420 27 S560 33 630 27 S770 21 840 27 S980 33 1050 27 S1190 21 1280 27 V34 H0Z"/></svg>';
-  function tapsHTML() {
-    if (!state.taps.length) return '<div class="empty">No taps listed</div>';
-    return state.taps.map(function (t, i) {
+  function head(s) {
+    return '<div class="hd"><div><div class="ttl">' + esc(s.title) + '</div>' +
+      (s.tagline ? '<div class="sub">' + esc(s.tagline) + '</div>' : '') +
+      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div>' + WAVES + '</div>';
+  }
+  function tapsHTML(s) {
+    if (!s.taps.length) return '<div class="empty">No taps listed</div>';
+    return s.taps.map(function (t, i) {
       var out = !!t.out;
       var meta = [t.brewery, t.style].filter(Boolean).map(esc).join(' &middot; ');
       var abv = String(t.abv || '').replace(/\s*%\s*$/, '');
       var right = out ? '<div class="kick">Kicked</div>' :
         (abv ? '<div class="abv">' + esc(abv) + '%</div>' : '') + (t.price ? '<div class="tp">' + esc(t.price) + '</div>' : '');
       return '<div class="tap' + (out ? ' out' : '') + '"><div class="tn">' + (i + 1) + '</div><div><div class="tname">' +
-        esc(t.name || 'Untitled') + '</div>' + (meta ? '<div class="tmeta">' + meta + '</div>' : '') +
+        esc(t.name) + '</div>' + (meta ? '<div class="tmeta">' + meta + '</div>' : '') +
         '</div><div class="tr">' + right + '</div></div>';
     }).join('');
   }
-  function sectionsHTML() {
-    var out = '';
-    state.sections.forEach(function (s) {
-      var items = s.items.filter(function (it) { return !it.hide && it.name; });
-      if (!items.length) return;
-      out += '<div class="sec"><div class="lbl">' + esc(s.title) + '</div>' + items.map(function (it) {
+  function sectionsHTML(s) {
+    var out = s.sections.map(function (sec) {
+      return '<div class="sec"><div class="lbl">' + esc(sec.title) + '</div>' + sec.items.map(function (it) {
         return '<div class="it"><span class="iname">' + esc(it.name) + '</span>' +
           (it.price ? '<span class="dots"></span><span class="iprice">' + esc(it.price) + '</span>' : '') + '</div>' +
           (it.desc ? '<div class="idesc">' + esc(it.desc) + '</div>' : '');
       }).join('') + '</div>';
-    });
+    }).join('');
     return out || '<div class="empty">Nothing on the menu right now</div>';
   }
+  // Scores, the ticker's contents and celebrations come from scores.js; these are just the slots it fills.
   function scoresBody() {
-    var g = '';
-    for (var i = 1; i <= 6; i++) {
-      g += '<div class="game"><div class="gs">Game ' + i + '</div>' +
-        '<div class="tm"><span class="sk"></span><span class="sc">&ndash;</span></div>' +
-        '<div class="tm"><span class="sk"></span><span class="sc">&ndash;</span></div></div>';
-    }
-    return '<div class="main"><div class="board wide"><div class="col"><div class="lbl">Scoreboard</div><div class="games">' + g +
-      '</div><div class="stub">Live scores are not connected yet. This is the layout placeholder.</div></div></div></div>';
+    return '<div class="main"><div class="board wide"><div class="col"><div class="lbl">Scoreboard</div>' +
+      '<div class="gwrap" id="board"></div></div></div></div>';
   }
   function ticker() {
-    var seg = '<span class="ti">Live scores will scroll here</span><span class="ti-d"></span>';
-    var run = seg + seg + seg + seg + seg + seg;
-    return '<div class="tick"><div class="tk-l">Scores</div><div class="tk-w"><div class="track"><div class="run">' + run +
-      '</div><div class="run" aria-hidden="true">' + run + '</div></div></div></div>';
+    return '<div class="tick"><div class="tk-l" id="tk-label">Scores</div><div class="tk-w" id="tk"></div></div>';
   }
-  function renderDisplay() {
+  function statusBody() {
+    return '<div class="main"><div class="board wide"><div class="col"><div class="lbl">Scoreboard</div><div class="empty">' +
+      (failed ? 'Can’t reach the Google Sheet. Check that it’s shared as “Anyone with the link: Viewer”. Retrying every minute.' :
+        'Loading…') + '</div></div></div></div>';
+  }
+  function render() {
     document.body.className = 'tv';
-    var body = state.mode === 'scores' ? scoresBody() :
-      '<div class="main"><div class="board"><div class="col"><div class="lbl">On Tap</div>' + tapsHTML() + '</div></div>' +
-      '<div class="board"><div class="col">' + sectionsHTML() + '</div></div></div>';
-    app.innerHTML = '<div id="screen"><div class="stage" id="stage">' + head() + body + (state.mode === 'ticker' ? ticker() : '') +
-      '</div></div><a class="editpill" href="#edit">Edit</a>';
+    var s = state || { title: 'The Basement Bar', tagline: '', mode: 'scores' };
+    var body = !state ? statusBody() : s.mode === 'scores' ? scoresBody() :
+      '<div class="main"><div class="board"><div class="col"><div class="lbl">On Tap</div>' + tapsHTML(s) + '</div></div>' +
+      '<div class="board"><div class="col">' + sectionsHTML(s) + '</div></div></div>';
+    var showTicker = state && (s.mode === 'ticker' || s.mode === 'scores');
+    app.innerHTML = '<div id="screen"><div class="stage" id="stage">' + head(s) + body + (showTicker ? ticker() : '') +
+      '</div></div><a class="editpill" href="' + SHEET_EDIT_URL + '" target="_blank" rel="noopener">Edit menu</a>';
     fit(); clock(); markMore();
+    if (window.Scores) {
+      if (state) Scores.setTeams(state.teams || []);
+      Scores.attach({ ticker: document.getElementById('tk'), label: document.getElementById('tk-label'), board: document.getElementById('board') });
+    }
   }
   function fit() {
     var s = document.getElementById('screen'), st = document.getElementById('stage');
@@ -187,12 +215,19 @@
     setTimeout(function () { el.style.opacity = '0'; }, 2500);
     setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 3000);
   }
-  function poll() {
-    if (editing) return;
-    fetchMenu().then(function (s) {
-      var j = serialize(s);
-      if (j !== baseline) { state = s; baseline = j; if (!editing) renderDisplay(); }
-    }, function () { /* keep showing the last good menu */ });
+  function poll(manual) {
+    return fetchMenu().then(function (s) {
+      var j = JSON.stringify(s);
+      failed = false;
+      if (j !== current) { state = s; current = j; saveCache(j); render(); }
+      else if (manual) toast('Menu is up to date');
+    }, function (err) {
+      // Keep showing the last good menu; only show the error screen if there's nothing to show.
+      failed = true;
+      if (window.console) console.warn('Menu refresh failed:', err && err.message);
+      if (!state) render();
+      if (manual) toast('Couldn’t reach the menu sheet');
+    });
   }
 
   /* ---------- fire tv ---------- */
@@ -211,220 +246,30 @@
     }, function () {});
   }
   document.addEventListener('keydown', function (e) {
-    if (editing) return;
     // Fire TV remote: Select/OK arrives as Enter, Play/Pause as MediaPlayPause (179).
     if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 23) { e.preventDefault(); toggleFullscreen(); keepAwake(); }
-    else if (e.key === 'MediaPlayPause' || e.keyCode === 179) { e.preventDefault(); toast('Refreshing menu…'); poll(); }
+    else if (e.key === 'MediaPlayPause' || e.keyCode === 179) {
+      e.preventDefault(); toast('Refreshing menu and scores…'); poll(true); if (window.Scores) Scores.refresh();
+    }
+    // Fast-forward plays a sample score celebration.
+    else if (e.key === 'MediaFastForward' || e.keyCode === 228 || e.key === 'c') { e.preventDefault(); if (window.Scores) Scores.demo(); }
     // Up grows the picture (less margin), Down shrinks it, to dial in the TV's overscan.
     else if (e.key === 'ArrowUp' || e.keyCode === 38) { e.preventDefault(); nudgeInset(-0.5); }
     else if (e.key === 'ArrowDown' || e.keyCode === 40) { e.preventDefault(); nudgeInset(0.5); }
   });
   document.addEventListener('visibilitychange', keepAwake);
 
-  /* ---------- editor ---------- */
-  function field(id, attrs, value, ph, label, type) {
-    return '<input type="' + (type || 'text') + '" id="' + id + '" ' + attrs + ' value="' + esc(value) + '" placeholder="' + esc(ph) + '" aria-label="' + esc(label) + '" autocomplete="off">';
-  }
-  function tapCard(t, i) {
-    var a = 'data-t="' + t.id + '"';
-    return '<div class="sub-card"><div class="hd-row"><span class="tapno">' + (i + 1) + '</span>' +
-      field('t-' + t.id + '-name', a + ' data-f="name"', t.name, 'Beer name', 'Tap ' + (i + 1) + ' beer name') + '</div>' +
-      '<div class="row">' + field('t-' + t.id + '-brewery', a + ' data-f="brewery"', t.brewery, 'Brewery', 'Brewery') +
-      field('t-' + t.id + '-style', a + ' data-f="style"', t.style, 'Style', 'Style') + '</div>' +
-      '<div class="row">' + field('t-' + t.id + '-abv', a + ' data-f="abv" inputmode="decimal"', t.abv, 'ABV %', 'ABV percent') +
-      field('t-' + t.id + '-price', a + ' data-f="price"', t.price, 'Price', 'Price') +
-      '<label class="chk"><input type="checkbox" id="t-' + t.id + '-out" ' + a + ' data-f="out"' + (t.out ? ' checked' : '') + '> Kicked</label></div>' +
-      '<div class="acts"><button type="button" class="btn" data-act="upTap" data-t="' + t.id + '" aria-label="Move tap up"' + (i === 0 ? ' disabled' : '') + '>&uarr;</button>' +
-      '<button type="button" class="btn" data-act="downTap" data-t="' + t.id + '" aria-label="Move tap down"' + (i === state.taps.length - 1 ? ' disabled' : '') + '>&darr;</button>' +
-      '<button type="button" class="btn" data-act="delTap" data-t="' + t.id + '" data-label="Remove">Remove</button></div></div>';
-  }
-  function itemCard(s, it) {
-    var a = 'data-s="' + s.id + '" data-i="' + it.id + '"';
-    return '<div class="sub-card"><div class="row">' +
-      field('i-' + it.id + '-name', a + ' data-f="name"', it.name, 'Item', 'Item name') +
-      field('i-' + it.id + '-price', a + ' data-f="price"', it.price, 'Price', 'Price') + '</div>' +
-      field('i-' + it.id + '-desc', a + ' data-f="desc"', it.desc, 'Short description (optional)', 'Description') +
-      '<div class="acts"><label class="chk"><input type="checkbox" id="i-' + it.id + '-hide" ' + a + ' data-f="hide"' + (it.hide ? ' checked' : '') + '> Hide from TV</label>' +
-      '<button type="button" class="btn" data-act="delItem" data-s="' + s.id + '" data-i="' + it.id + '" data-label="Remove">Remove</button></div></div>';
-  }
-  function sectionCard(s) {
-    return '<section class="card"><div class="hd-row">' +
-      field('s-' + s.id + '-title', 'data-s="' + s.id + '" data-f="title"', s.title, 'Section title', 'Section title') +
-      '<button type="button" class="btn" data-act="delSection" data-s="' + s.id + '" data-label="Remove section">Remove section</button></div>' +
-      s.items.map(function (it) { return itemCard(s, it); }).join('') +
-      '<div class="qa"><input type="text" id="qa-' + s.id + '" data-qa="' + s.id + '" placeholder="Add an item, press Enter" aria-label="Add an item to ' + esc(s.title) + '" autocomplete="off">' +
-      '<button type="button" class="btn" data-act="quickAdd" data-s="' + s.id + '">Add</button></div></section>';
-  }
-  function ghCard() {
-    return '<details class="card" id="ghcard"' + (ghReady() ? '' : ' open') + '><summary>GitHub connection</summary>' +
-      '<p class="hint">Publish saves <code>menu.json</code> to your repo, and the TV picks it up within a few minutes. ' +
-      'Use a fine-grained token with <b>Contents: Read and write</b> on this repo only. It is stored in this browser only.</p>' +
-      '<div class="row">' + field('gh-owner', 'data-gh="owner"', gh.owner, 'GitHub user', 'GitHub user') +
-      field('gh-repo', 'data-gh="repo"', gh.repo, 'Repository', 'Repository') +
-      field('gh-branch', 'data-gh="branch"', gh.branch, 'Branch', 'Branch') + '</div>' +
-      field('gh-token', 'data-gh="token"', gh.token, 'github_pat_…', 'GitHub token', 'password') +
-      '<div class="acts"><button type="button" class="btn" data-act="download">Download menu.json instead</button></div></details>';
-  }
-  function editorHTML() {
-    if (!loaded) return '<div class="ed"><p class="hint" style="padding-top:24px">Loading menu…</p></div>';
-    var h = '<div class="ed"><div class="bar"><div class="bar-t"><div class="bar-h">Display editor</div><div class="bar-s" id="status" role="status"></div></div>' +
-      '<a class="lnk" href="#">View display</a><button type="button" class="btn primary" id="pub" data-act="publish">Publish</button></div>' +
-      '<p class="hint">Edits stay on this page until you publish. The TV checks for changes every couple of minutes.</p>';
-    h += ghCard();
-    h += '<section class="card"><h2>Screen</h2><div class="seg" role="group" aria-label="Screen mode">' +
-      Object.keys(MODES).map(function (k) {
-        return '<button type="button" class="btn seg-b" id="mode-' + k + '" data-act="mode" data-mode="' + k + '" aria-pressed="' + (state.mode === k) + '">' + MODES[k] + '</button>';
-      }).join('') + '</div></section>';
-    h += '<section class="card"><h2>Bar</h2><label class="fl" for="g-title">Name</label>' +
-      field('g-title', 'data-g="title"', state.title, 'Bar name', 'Bar name') +
-      '<label class="fl" for="g-tagline">Tagline</label>' + field('g-tagline', 'data-g="tagline"', state.tagline, 'Optional', 'Tagline') + '</section>';
-    h += '<section class="card"><div class="card-top"><h2>On tap</h2><button type="button" class="btn" data-act="addTap">Add tap</button></div>' +
-      (state.taps.length ? state.taps.map(tapCard).join('') : '<p class="hint">No taps yet.</p>') + '</section>';
-    h += state.sections.map(sectionCard).join('');
-    h += '<button type="button" class="btn" data-act="addSection">Add menu section</button></div>';
-    return h;
-  }
-  function rerender(focusId) {
-    var id = focusId || (document.activeElement && document.activeElement.id);
-    var det = document.getElementById('ghcard');
-    var ghOpen = det ? det.open : null;
-    app.innerHTML = editorHTML();
-    det = document.getElementById('ghcard');
-    if (det && ghOpen !== null) det.open = ghOpen;
-    if (id) { var n = document.getElementById(id); if (n && n.focus) n.focus(); }
-    updateBar();
-  }
-  function updateBar() {
-    var p = document.getElementById('pub'), s = document.getElementById('status');
-    if (!p) return;
-    var dirty = serialize(state) !== baseline;
-    p.disabled = !dirty || busy;
-    s.textContent = note || (busy ? 'Publishing…' : !dirty ? 'Matches what the TV shows' :
-      ghReady() ? 'Unpublished changes' : 'Unpublished changes. Connect GitHub to publish.');
-    s.className = 'bar-s' + (noteErr ? ' err' : dirty && !note ? ' dirty' : '');
-  }
-  function setNote(msg, err) { note = msg || ''; noteErr = !!err; updateBar(); }
-  function apply(el) {
-    var v = el.type === 'checkbox' ? el.checked : el.value;
-    if (el.dataset.gh) { gh[el.dataset.gh] = v.trim(); saveGh(); return; }
-    if (el.dataset.g) { state[el.dataset.g] = v; return; }
-    var f = el.dataset.f;
-    if (!f) return;
-    if (el.dataset.t) { var t = find(state.taps, el.dataset.t); if (t) t[f] = v; return; }
-    if (el.dataset.i) { var s = find(state.sections, el.dataset.s); var it = s && find(s.items, el.dataset.i); if (it) it[f] = v; return; }
-    if (el.dataset.s) { var sec = find(state.sections, el.dataset.s); if (sec) sec[f] = v; }
-  }
-  function swap(arr, i, j) { var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
-  function indexOf(arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return i; return -1; }
-  function addItem(sid, name) {
-    var s = find(state.sections, sid); name = (name || '').trim();
-    if (!s) return;
-    if (!name) { var q = document.getElementById('qa-' + sid); if (q) q.focus(); return; }
-    s.items.push({ id: uid(), name: name, price: '', desc: '', hide: false });
-    note = ''; noteErr = false; rerender('qa-' + sid);
-  }
-  function arm(b) {
-    b.dataset.armed = '1'; b.textContent = 'Tap again to remove'; b.classList.add('armed');
-    setTimeout(function () {
-      if (document.body.contains(b)) { delete b.dataset.armed; b.textContent = b.dataset.label || 'Remove'; b.classList.remove('armed'); }
-    }, 2500);
-  }
-  var DESTRUCTIVE = { delTap: 1, delItem: 1, delSection: 1 };
-
-  app.addEventListener('input', function (e) { if (!editing) return; note = ''; noteErr = false; apply(e.target); updateBar(); });
-  app.addEventListener('change', function (e) { if (!editing) return; if (e.target.type === 'checkbox') { note = ''; noteErr = false; apply(e.target); updateBar(); } });
-  app.addEventListener('keydown', function (e) {
-    if (editing && e.key === 'Enter' && e.target.dataset && e.target.dataset.qa) { e.preventDefault(); addItem(e.target.dataset.qa, e.target.value); }
-  });
-  app.addEventListener('click', function (e) {
-    if (!editing) return;
-    var b = e.target.closest('[data-act]');
-    if (!b || b.disabled) return;
-    var a = b.dataset.act;
-    if (DESTRUCTIVE[a] && !b.dataset.armed) { arm(b); return; }
-    note = ''; noteErr = false;
-    if (a === 'publish') { publish(); return; }
-    if (a === 'download') { download(); return; }
-    if (a === 'mode') { state.mode = b.dataset.mode; rerender(); return; }
-    if (a === 'addTap') { var id = uid(); state.taps.push({ id: id, name: '', brewery: '', style: '', abv: '', price: '', out: false }); rerender('t-' + id + '-name'); return; }
-    if (a === 'upTap' || a === 'downTap') {
-      var i = indexOf(state.taps, b.dataset.t), j = a === 'upTap' ? i - 1 : i + 1;
-      if (i > -1 && j > -1 && j < state.taps.length) swap(state.taps, i, j);
-      rerender(); return;
-    }
-    if (a === 'delTap') { var k = indexOf(state.taps, b.dataset.t); if (k > -1) state.taps.splice(k, 1); rerender('pub'); return; }
-    if (a === 'quickAdd') { var q = document.getElementById('qa-' + b.dataset.s); addItem(b.dataset.s, q ? q.value : ''); return; }
-    if (a === 'delItem') {
-      var s = find(state.sections, b.dataset.s), n = s ? indexOf(s.items, b.dataset.i) : -1;
-      if (n > -1) s.items.splice(n, 1);
-      rerender('qa-' + b.dataset.s); return;
-    }
-    if (a === 'addSection') { var sid = uid(); state.sections.push({ id: sid, title: 'New section', items: [] }); rerender('s-' + sid + '-title'); return; }
-    if (a === 'delSection') { var m = indexOf(state.sections, b.dataset.s); if (m > -1) state.sections.splice(m, 1); rerender('pub'); }
-  });
-
-  /* ---------- publish ---------- */
-  function download() {
-    var blob = new Blob([serialize(state)], { type: 'application/json' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = DATA_URL;
-    document.body.appendChild(a); a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.parentNode.removeChild(a); }, 0);
-    setNote('Downloaded. Commit it to the repo to update the TV.');
-  }
-  function publish() {
-    if (busy) return;
-    if (!ghReady()) {
-      var det = document.getElementById('ghcard'); if (det) det.open = true;
-      var tok = document.getElementById(gh.owner && gh.repo ? 'gh-token' : 'gh-owner'); if (tok) tok.focus();
-      setNote('Add your GitHub details first.', true); return;
-    }
-    busy = true; setNote('');
-    var body = serialize(state);
-    // Always fetch the current sha right before writing so we never clobber with a stale one.
-    ghRead().then(function (cur) {
-      return ghReq('PUT', ghUrl(), { message: 'Update bar menu', content: b64enc(body), sha: cur.sha, branch: gh.branch });
-    }).then(function () {
-      baseline = body; busy = false; setNote('Published. The TV will update in a few minutes.');
-    }, function (err) {
-      busy = false;
-      var c = err && err.status;
-      setNote(c === 401 ? 'GitHub rejected the token.' : c === 403 ? 'Token cannot write to this repo.' :
-        c === 404 ? 'Repo or menu.json not found. Check the GitHub details.' : 'Could not publish: ' + (err && err.message || 'unknown error'), true);
-    });
-  }
-
   /* ---------- boot ---------- */
-  function loadForEditor() {
-    // Prefer the GitHub API copy: Pages can lag a minute or two behind the latest commit.
-    var p = ghReady() ? ghRead().then(function (r) { return r.data; }, fetchMenu) : fetchMenu();
-    return p.then(function (s) { state = s; baseline = serialize(s); loaded = true; },
-      function () { loaded = true; baseline = serialize(state); note = 'Could not load menu.json. Starting blank.'; noteErr = true; });
-  }
-  function route() {
-    var was = editing;
-    editing = location.hash === '#edit';
-    if (editing) {
-      document.body.className = 'editing';
-      if (!was) { loaded = false; rerender(''); loadForEditor().then(function () { if (editing) rerender(''); }); }
-      else rerender('');
-    } else {
-      if (was && serialize(state) !== baseline) { state = norm(JSON.parse(baseline)); }
-      renderDisplay();
-      if (was) poll();
-    }
-  }
-  window.addEventListener('hashchange', route);
-  window.addEventListener('resize', function () { if (!editing) fit(); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (!editing) markMore(); });
+  window.addEventListener('resize', fit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(markMore);
   setInterval(clock, 15000);
   setInterval(poll, POLL_MS);
   // Full reload every 6 hours picks up code changes and clears any slow memory growth on the Fire TV.
-  setTimeout(function () { if (!editing) { try { location.reload(); } catch (e) {} } }, 6 * 3600 * 1000);
+  setTimeout(function () { try { location.reload(); } catch (e) {} }, 6 * 3600 * 1000);
 
-  if (location.hash === '#edit') { route(); }
-  else {
-    fetchMenu().then(function (s) { state = s; baseline = serialize(s); }, function () { baseline = serialize(state); })
-      .then(function () { route(); keepAwake(); });
-  }
+  // Show the last menu we saw right away (useful if the Fire TV boots before Wi-Fi is up), then refresh.
+  var cached = loadCache();
+  if (cached && cached.taps) { state = cached; current = JSON.stringify(cached); }
+  render();
+  poll().then(keepAwake);
 })();
