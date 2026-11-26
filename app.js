@@ -10,6 +10,8 @@
   var INSET_KEY = 'basementtv.inset';
   var INSET_DEFAULT = 5, INSET_MAX = 15;
   var LED_PX = 3;  // the ticker's LED pitch in stage pixels (TICKER_STEP_PX in scores.js, the 3px dot grid in style.css)
+  // ?theme=thanksgiving (or beach) previews a theme without changing the sheet.
+  var THEME_OVERRIDE = (/[?&]theme=([a-z]+)/i.exec(location.search) || [])[1] || '';
   var MODES = { 'menu': 'menu', 'menu + scores ticker': 'ticker', 'ticker': 'ticker', 'scoreboard': 'scores', 'scores': 'scores' };
 
   var inset = loadInset();
@@ -68,6 +70,8 @@
     return '';
   }
   function yes(v) { return /^(true|yes|y|x|1)$/i.test(String(v || '').trim()); }
+  // "Vodka, Apple cider, Ginger beer" (commas, semicolons or line breaks) -> ['Vodka', 'Apple cider', 'Ginger beer']
+  function list(v) { return String(v || '').split(/\s*[,;\n]\s*/).filter(Boolean); }
 
   function fetchMenu() {
     // A missing Teams tab only turns off scores; it shouldn't take the menu down with it.
@@ -82,15 +86,18 @@
         var title = pick(r, ['section']) || 'Specials';
         var sec = byName[title];
         if (!sec) { sec = byName[title] = { title: title, items: [] }; sections.push(sec); }
-        sec.items.push({ name: name, price: pick(r, ['price']), desc: pick(r, ['description', 'desc']) });
+        sec.items.push({ name: name, price: pick(r, ['price']), desc: pick(r, ['description', 'desc']), ingredients: list(r.ingredients), glass: r.glass || '' });
       });
       return {
         title: settings['bar name'] || 'The Basement Bar',
         tagline: settings['tagline'] || '',
         mode: MODES[(settings['screen'] || '').toLowerCase()] || 'scores',
-        taps: taps.filter(function (r) { return pick(r, ['beer', 'name']); }).map(function (r) {
+        theme: (THEME_OVERRIDE || settings['theme'] || 'beach').toLowerCase(),
+        drinksHeading: settings['drinks heading'] || 'On Tap',
+        bigGames: !/^(no|off|false|n|0)$/i.test(settings['other big games'] || ''),
+        taps: taps.filter(function (r) { return pick(r, ['beer', 'name']) && !yes(r.hide); }).map(function (r) {
           return { name: pick(r, ['beer', 'name']), brewery: r.brewery || '', style: r.style || '',
-            abv: pick(r, ['abv %', 'abv']), price: r.price || '', out: yes(r.kicked) };
+            abv: pick(r, ['abv %', 'abv']), price: r.price || '', out: yes(r.kicked), flavors: list(r.flavors) };
         }),
         sections: sections,
         teams: res[3].filter(function (r) { return r.league && r.team; }).map(function (r) {
@@ -111,10 +118,29 @@
     '<path fill="#1f7fa8" d="M0 14 C90 8 170 20 260 14 S430 6 520 14 S690 22 780 14 S950 6 1040 14 S1200 22 1280 14 V34 H0Z"/>' +
     '<path fill="#f7f1df" opacity=".9" d="M0 24 C70 20 140 28 210 24 S350 18 420 24 S560 30 630 24 S770 18 840 24 S980 30 1050 24 S1190 18 1280 24 V27 C1190 21 1120 30 1050 27 S910 21 840 27 S700 33 630 27 S490 21 420 27 S280 33 210 27 S70 23 0 27Z"/>' +
     '<path fill="#e6cf9f" d="M0 27 C70 23 140 33 210 27 S350 21 420 27 S560 33 630 27 S770 21 840 27 S980 33 1050 27 S1190 21 1280 27 V34 H0Z"/></svg>';
+  // Only real theme entries (objects with scenery) count; anything else typed in the sheet falls back to Beach.
+  function themeFor(s) {
+    var t = window.Themes && Object.prototype.hasOwnProperty.call(Themes, s.theme) && Themes[s.theme];
+    return t && typeof t === 'object' && t.scene ? t : null;
+  }
   function head(s) {
-    return '<div class="hd"><div><div class="ttl">' + esc(s.title) + '</div>' +
+    var th = themeFor(s);
+    return '<div class="hd"><div>' + (th && th.eyebrow ? '<div class="eyebrow">' + esc(th.eyebrow) + '</div>' : '') +
+      '<div class="ttl">' + esc(s.title) + '</div>' +
       (s.tagline ? '<div class="sub">' + esc(s.tagline) + '</div>' : '') +
-      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div>' + WAVES + '</div>';
+      '</div><div class="clk"><div class="ct" id="clk-t"></div><div class="cd" id="clk-d"></div></div>' + (th ? th.scene : WAVES) + '</div>';
+  }
+  function flavorsHTML(t) {
+    if (!t.flavors || !t.flavors.length) return '';
+    return '<div class="flvs">' + t.flavors.map(function (f) {
+      var c = window.Themes && Themes.flavorColor(f);
+      return '<span class="flv">' + (c ? '<i style="background:' + c + '"></i>' : '') + esc(f) + '</span>';
+    }).join('') + '</div>';
+  }
+  // The cocktail card's glass (glasses.js): the Menu tab's Glass column, or picked from the name and ingredients.
+  function glass(it, i) {
+    if (!window.Glasses) return '';
+    return Glasses.svg(Glasses.pick(it.glass, it.name, it.ingredients), Glasses.tint(it.name, it.ingredients, i));
   }
   function tapsHTML(s) {
     if (!s.taps.length) return '<div class="empty">No taps listed</div>';
@@ -125,12 +151,23 @@
       var right = out ? '<div class="kick">Kicked</div>' :
         (abv ? '<div class="abv">' + esc(abv) + '%</div>' : '') + (t.price ? '<div class="tp">' + esc(t.price) + '</div>' : '');
       return '<div class="tap' + (out ? ' out' : '') + '"><div class="tn">' + (i + 1) + '</div><div><div class="tname">' +
-        esc(t.name) + '</div>' + (meta ? '<div class="tmeta">' + meta + '</div>' : '') +
+        esc(t.name) + '</div>' + (meta ? '<div class="tmeta">' + meta + '</div>' : '') + flavorsHTML(t) +
         '</div><div class="tr">' + right + '</div></div>';
     }).join('');
   }
   function sectionsHTML(s) {
+    var n = 0;
     var out = s.sections.map(function (sec) {
+      // A section whose items list ingredients (Menu tab, Ingredients column) shows as cocktail cards.
+      if (sec.items.some(function (it) { return it.ingredients && it.ingredients.length; })) {
+        return '<div class="sec"><div class="lbl">' + esc(sec.title) + '</div>' + sec.items.map(function (it) {
+          return '<div class="ck">' + glass(it, n++) + '<div class="ck-b"><div class="ck-top"><span class="ck-n">' + esc(it.name) + '</span>' +
+            (it.price ? '<span class="iprice">' + esc(it.price) + '</span>' : '') + '</div>' +
+            (it.desc ? '<div class="ck-d">' + esc(it.desc) + '</div>' : '') +
+            (it.ingredients && it.ingredients.length ? '<ul class="ck-i">' + it.ingredients.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
+            '</div></div>';
+        }).join('') + '</div>';
+      }
       return '<div class="sec"><div class="lbl">' + esc(sec.title) + '</div>' + sec.items.map(function (it) {
         return '<div class="it"><span class="iname">' + esc(it.name) + '</span>' +
           (it.price ? '<span class="dots"></span><span class="iprice">' + esc(it.price) + '</span>' : '') + '</div>' +
@@ -156,13 +193,16 @@
     document.body.className = 'tv';
     var s = state || { title: 'The Basement Bar', tagline: '', mode: 'scores' };
     var body = !state ? statusBody() : s.mode === 'scores' ? scoresBody() :
-      '<div class="main"><div class="board"><div class="col"><div class="lbl">On Tap</div>' + tapsHTML(s) + '</div></div>' +
-      '<div class="board"><div class="col">' + sectionsHTML(s) + '</div></div></div>';
+      '<div class="main"><div class="board"><div class="col" id="drinks"><div class="lbl">' + esc(s.drinksHeading || 'On Tap') + '</div>' + tapsHTML(s) + '</div></div>' +
+      '<div class="board"><div class="col" id="menu">' + sectionsHTML(s) + '</div></div></div>';
     var showTicker = state && (s.mode === 'ticker' || s.mode === 'scores');
-    app.innerHTML = '<div id="screen"><div class="stage" id="stage">' + head(s) + body + (showTicker ? ticker() : '') +
+    var th = themeFor(s);
+    app.innerHTML = '<div id="screen" class="theme-' + esc(th ? s.theme : 'beach') + '"><div class="stage" id="stage">' + head(s) +
+      (th && th.overlay ? th.overlay() : '') + body + (showTicker ? ticker() : '') +
       '</div></div><a class="editpill" href="' + SHEET_EDIT_URL + '" target="_blank" rel="noopener">Edit menu</a>';
     fit(); clock(); markMore();
     if (window.Scores) {
+      if (state && Scores.setOptions) Scores.setOptions({ bigGames: s.bigGames !== false });
       if (state) Scores.setTeams(state.teams || []);
       Scores.attach({ ticker: document.getElementById('tk'), label: document.getElementById('tk-label'), board: document.getElementById('board') });
     }
@@ -197,7 +237,32 @@
     calibTimer = setTimeout(function () { var s = document.getElementById('stage'); if (s) s.classList.remove('calib'); }, 3000);
     toast('Edge margin ' + inset + '%  ·  Up = smaller, Down = bigger');
   }
+  // Step each menu board down through compact sizes (dense1, dense2 in style.css) until it fits, so up to six drinks
+  // and three cocktails show without "+ more" while short lists keep the bigger type.
+  function fitDrinks() {
+    ['drinks', 'menu'].forEach(function (id) {
+      var col = document.getElementById(id);
+      if (!col) return;
+      col.classList.remove('dense1', 'dense2');
+      if (col.scrollHeight > col.clientHeight + 2) col.classList.add('dense1');
+      if (col.scrollHeight > col.clientHeight + 2) { col.classList.remove('dense1'); col.classList.add('dense2'); }
+    });
+  }
+  // Fit the Thanksgiving table (themes.js, x 480-1060 in the 1280-wide header) into the gap between the bar name and
+  // the clock: left alone when it fits, otherwise shrunk (down to 55%) and slid over, still standing on the table.
+  var FOOD_LEFT = 480, FOOD_W = 580, TABLE_Y = 128;
+  function fitScene() {
+    var g = app.querySelector('.tg-food'), hd = app.querySelector('.hd'), clk = app.querySelector('.clk');
+    if (!g || !hd || !clk) return;
+    var name = hd.firstElementChild, left = name.offsetLeft + name.offsetWidth + 24, right = clk.offsetLeft - 16;
+    if (left <= FOOD_LEFT && right >= FOOD_LEFT + FOOD_W) { g.removeAttribute('transform'); return; }
+    var k = Math.max(0.55, Math.min(1, (right - left) / FOOD_W));
+    var x = Math.max(left, (left + right) / 2 - FOOD_W * k / 2);
+    g.setAttribute('transform', 'translate(' + (x - FOOD_LEFT * k).toFixed(1) + ' ' + (TABLE_Y * (1 - k)).toFixed(1) + ') scale(' + k.toFixed(3) + ')');
+  }
   function markMore() {
+    fitDrinks();
+    fitScene();
     var cols = app.querySelectorAll('.col');
     for (var i = 0; i < cols.length; i++) {
       var old = cols[i].querySelector('.more');

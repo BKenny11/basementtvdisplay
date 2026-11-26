@@ -185,3 +185,106 @@ body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 .lite .cele-bg{box-shadow:none}
 .lite .cele-logo{filter:none}
 .lite .cele-t{text-shadow:0 6px 0 rgba(0,0,0,.35)}
+
+/* ---------- Drinks extras (any theme) ---------- */
+/* Flavor chips under a drink (Taps tab, Flavors column) */
+.flvs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.flv{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 4px;border-radius:999px;background:rgba(242,179,80,.12);
+  border:1px solid rgba(242,179,80,.4);font:600 17px/1 var(--body);color:#f6dfb4;white-space:nowrap}
+.flv i{width:10px;height:10px;border-radius:50%;flex:none}
+/* Cocktail cards (Menu tab rows with Ingredients) */
+.ck{display:flex;gap:16px;align-items:flex-start;padding:12px 16px;margin:4px 0 12px;border-radius:10px;
+  background:rgba(0,0,0,.2);border:1px solid rgba(242,179,80,.28)}
+.ck-glass{flex:none;width:52px;height:66px;margin-top:2px}
+.ck-b{flex:1;min-width:0}
+.ck-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.ck-n{font:900 29px/1.05 var(--serif);color:var(--fg)}
+.ck-d{font:italic 600 18px/1.2 var(--serif);color:var(--accent);margin-top:3px}
+.ck-i{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px 14px}
+.ck-i li{position:relative;padding-left:17px;font:500 18px/1.2 var(--body);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ck-i li::before{content:"";position:absolute;left:2px;top:.42em;width:8px;height:8px;border-radius:2px;background:#d9622b;transform:rotate(45deg)}
+
+/* ---------- Thanksgiving theme (Settings: Theme = Thanksgiving) ----------
+   Autumn sunset over a harvest table (turkey, wine, sides, pie, football; artwork in themes.js), leaves drifting
+   behind dark espresso chalkboards, harvest-gold lettering. The LED ticker and celebrations are unchanged. */
+.theme-thanksgiving{--accent:#f2b350;--accent-ink:#2a1606;--board:#2a1d16;--brass:rgba(214,140,70,.5);--ink:#3d1d0b;
+  --fg:#f7ead6;--mute:#cdb79d;--bad:#ef7d55}
+#screen.theme-thanksgiving{background:var(--grain),linear-gradient(#3b2213,#24140a);background-size:2400px 260px,auto}
+.theme-thanksgiving .stage{background:var(--grain),linear-gradient(180deg,#704020,#4a2912);background-size:1400px 160px,auto}
+.theme-thanksgiving .hd{height:150px;padding-top:10px;
+  background:radial-gradient(circle at 70% 78%,rgba(255,236,170,.9) 0 34px,rgba(255,214,130,.45) 35px,rgba(255,214,130,0) 120px),
+    linear-gradient(180deg,#fadfa1 0%,#f5b768 52%,#e7843f 100%)}
+.theme-thanksgiving .tg-scene{position:absolute;left:0;bottom:0;width:100%;height:150px;z-index:0}
+.theme-thanksgiving .eyebrow{font:italic 700 19px/1 var(--serif);letter-spacing:.03em;color:#8e2f10;margin-bottom:5px}
+.theme-thanksgiving .ttl{color:var(--ink);text-shadow:0 2px 0 rgba(255,240,210,.5);background-color: rgb(255 255 255 / 50%);}
+.theme-thanksgiving .sub{color:#7a3512}
+.theme-thanksgiving .ct{color:var(--ink)}
+.theme-thanksgiving .cd{color:#7a3512}
+.theme-thanksgiving .main,.theme-thanksgiving .tick{position:relative;z-index:2}
+.theme-thanksgiving .col{background:var(--chalk),radial-gradient(ellipse at 50% 15%,#3e2c20,var(--board) 60%,#1b120d)}
+.theme-thanksgiving .tn{background:#1b120d;box-shadow:inset 0 0 0 3px #1b120d,inset 0 0 0 4px rgba(242,179,80,.5)}
+.theme-thanksgiving .tap{grid-template-columns:52px 1fr auto;padding:12px 0}
+.theme-thanksgiving .tn{width:52px;height:52px;font-size:26px}
+.theme-thanksgiving .tname{font-size:34px}
+.theme-thanksgiving .tmeta{font-size:18px;margin-top:3px}
+.theme-thanksgiving .abv{font-size:28px}
+.theme-thanksgiving .flv{font-size:16px;padding:5px 11px 4px}
+.theme-thanksgiving .flvs{gap:8px;margin-top:8px}
+.theme-thanksgiving .more{background:linear-gradient(rgba(27,18,13,0),#1f150f 65%)}
+/* A faint chalk football sketched into the drinks board's empty corner */
+.theme-thanksgiving .board:first-child .col::before{content:"";position:absolute;right:22px;bottom:16px;width:230px;height:150px;opacity:.13;pointer-events:none;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 230 150' fill='none' stroke='%23f7ead6' stroke-width='4' stroke-linecap='round'%3E%3Cg transform='rotate(-18 115 75)'%3E%3Cpath d='M25 75C55 25 175 25 205 75C175 125 55 125 25 75Z'/%3E%3Cpath d='M48 52Q56 75 48 98M182 52Q174 75 182 98M85 66H145M95 58V74M107 58V74M119 58V74M131 58V74'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain}
+/* Falling leaves, behind the boards (GPU transforms only) */
+.leaves{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.lf{position:absolute;top:-70px;display:block;animation:leaf-fall linear infinite;will-change:transform}
+.lf b{display:block;animation:leaf-sway ease-in-out infinite alternate}
+.lf svg{display:block;opacity:.92}
+@keyframes leaf-fall{to{transform:translateY(860px)}}
+@keyframes leaf-sway{from{transform:translateX(-34px) rotate(-35deg)}to{transform:translateX(34px) rotate(45deg)}}
+.lite .lf b{animation:none}
+@media (prefers-reduced-motion:reduce){.lf,.lf b{animation:none}.leaves{display:none}}
+/* Leaf clusters over the boards' outer top corners */
+.tg-corner{position:absolute;top:144px;z-index:3;display:flex;pointer-events:none}
+.tg-corner svg{display:block;margin-right:-22px;filter:drop-shadow(0 3px 3px rgba(40,15,5,.45))}
+.tg-corner.tl{left:6px}
+.tg-corner.tr{right:28px;flex-direction:row-reverse}
+.tg-corner svg:nth-child(1){transform:rotate(-28deg)}
+.tg-corner svg:nth-child(2){transform:rotate(22deg) translateY(12px)}
+.tg-corner svg:nth-child(3){transform:rotate(-62deg) translate(-4px,-6px)}
+.lite .tg-corner svg{filter:none}
+
+/* Drinks list density: app.js fitDrinks() adds dense1, then dense2, until the list fits its board without "+ more".
+   Six drinks (some with flavor chips) fit at dense2 in either theme. */
+.col.dense1 .tap{grid-template-columns:44px 1fr auto;gap:14px;padding:7px 0}
+.col.dense1 .tn{width:44px;height:44px;font-size:22px}
+.col.dense1 .tname{font-size:28px}
+.col.dense1 .tmeta{font-size:16px;margin-top:2px}
+.col.dense1 .abv{font-size:24px}
+.col.dense1 .tp{font-size:17px}
+.col.dense1 .flvs{gap:6px;margin-top:5px}
+.col.dense1 .flv{font-size:14px;padding:3px 9px 2px;gap:6px}
+.col.dense1 .flv i{width:9px;height:9px}
+.col.dense2 .tap{grid-template-columns:38px 1fr auto;gap:12px;padding:2px 0}
+.col.dense2 .tn{width:38px;height:38px;font-size:19px;border-width:2px}
+.col.dense2 .tname{font-size:24px;line-height:1}
+.col.dense2 .tmeta{font-size:15px;line-height:1.15;margin-top:1px}
+.col.dense2 .abv{font-size:21px}
+.col.dense2 .tp{font-size:15px}
+.col.dense2 .kick{font-size:16px}
+.col.dense2 .flvs{gap:5px;margin-top:3px}
+.col.dense2 .flv{font-size:13px;padding:2px 8px 1px;gap:5px}
+.col.dense2 .flv i{width:8px;height:8px}
+/* Cocktail card density (same fitDrinks() steps, on the cocktail board). Three cocktails fit at dense2. */
+.col.dense1 .ck{gap:13px;padding:9px 14px;margin:3px 0 9px}
+.col.dense1 .ck-glass{width:44px;height:56px}
+.col.dense1 .ck-n{font-size:25px}
+.col.dense1 .ck-d{font-size:16px;margin-top:2px}
+.col.dense1 .ck-i{margin-top:6px;gap:3px 12px}
+.col.dense1 .ck-i li{font-size:16px}
+.col.dense2 .ck{gap:11px;padding:6px 12px;margin:2px 0 7px}
+.col.dense2 .ck-glass{width:38px;height:48px}
+.col.dense2 .ck-n{font-size:22px}
+.col.dense2 .ck-d{font-size:15px;margin-top:1px}
+.col.dense2 .ck-i{margin-top:4px;gap:2px 10px;grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+.col.dense2 .ck-i li{font-size:15px;padding-left:14px}
+.col.dense2 .ck-i li::before{width:6px;height:6px}

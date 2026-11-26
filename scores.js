@@ -44,6 +44,7 @@
   var tickerSig = '', pendingTicker = null, tickerIsPlaceholder = false;
   var tickerAnim = null, patched = {}, boardCache = '', labelCache = '';
   var queue = [], showing = false;
+  var options = { bigGames: true };  // from the sheet's Settings tab ("Other big games"), via setOptions
 
   function esc(x) {
     return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -120,7 +121,13 @@
     if (polling) return;
     polling = true;
     var now = Date.now(), jobs = [];
-    if (now - lastSchedule > SCHEDULE_MS) { lastSchedule = now; jobs.push(loadSchedules()); }
+    if (now - lastSchedule > SCHEDULE_MS) {
+      // First load: all at once, since the ticker needs it. Later refreshes: one team at a time in the background, so a
+      // Fire TV never has to chew through several megabytes of schedules in one go.
+      if (!lastSchedule) jobs.push(loadSchedules(false));
+      else loadSchedules(true).then(update);
+      lastSchedule = now;
+    }
     Promise.all(jobs).then(function () {
       var more = [loadScoreboards()];
       if (now - lastNews > NEWS_MS) { lastNews = now; more.push(loadNews()); }
@@ -165,28 +172,33 @@
     var t = Date.parse(g.date);
     if (g.state === 'pre' && t - now > 24 * 3600 * 1000) return false;
     if (g.state === 'post' && now - t > 12 * 3600 * 1000) return false;
+    if (!options.bigGames) return false;
     return g.postseason || (g.league.college && !!(g.home.rank || g.away.rank));
   }
   function leagueHasLive(lg) {
     for (var id in games) if (games[id].league === lg && games[id].state === 'in') return true;
     return false;
   }
-  function loadSchedules() {
-    var today = new Date().toDateString();
-    gameToday = {};
-    return Promise.all(followed.map(function (f) {
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function loadSchedules(oneAtATime) {
+    var today = new Date().toDateString(), found = {};
+    function one(f) {
       return getJSON(API + f.league.path + '/teams/' + f.team.id + '/schedule').then(function (j) {
         var soon = null, now = Date.now();
         (j.events || []).forEach(function (e) {
           var t = Date.parse(e.date);
-          if (new Date(t).toDateString() === today) gameToday[f.league.key] = true;
+          if (new Date(t).toDateString() === today) found[f.league.key] = true;
           var st = e.competitions && e.competitions[0] && e.competitions[0].status;
           var done = st && st.type && st.type.state === 'post';
           if (!done && t > now - 5 * 3600 * 1000 && (!soon || t < Date.parse(soon.date))) soon = e;
         });
         nextGame[f.key] = soon ? parseEvent(soon, f.league) : null;
       }, function (e) { warn(e.message); });
-    }));
+    }
+    var all = oneAtATime
+      ? followed.reduce(function (p, f) { return p.then(function () { return one(f); }).then(function () { return wait(2000); }); }, Promise.resolve())
+      : Promise.all(followed.map(one));
+    return all.then(function () { gameToday = found; });
   }
   function loadNews() {
     return Promise.all(followed.map(function (f) {
@@ -228,7 +240,8 @@
     var homeFirst = c.competitors[0].homeAway === 'home';
     var bc = c.broadcasts && c.broadcasts[0] && c.broadcasts[0].names && c.broadcasts[0].names[0];
     var note = c.notes && c.notes[0] && c.notes[0].headline || '';
-    return { id: String(e.id), league: lg, date: e.date, state: type.state || 'pre', detail: type.shortDetail || type.detail || '',
+    // ESPN event ids are numeric; strip anything else since the id lands in an HTML attribute and a CSS selector.
+    return { id: String(e.id).replace(/[^\w-]/g, ''), league: lg, date: e.date, state: type.state || 'pre', detail: type.shortDetail || type.detail || '',
       home: homeFirst ? a : b, away: homeFirst ? b : a, tv: bc || '',
       postseason: !!(e.season && e.season.type === 3), note: note, series: c.series && c.series.summary || '',
       lastPlay: c.situation && c.situation.lastPlay && c.situation.lastPlay.text || '' };
@@ -292,7 +305,7 @@
     el.style.setProperty('--tc', c1);
     el.style.setProperty('--ta', c2);
     el.innerHTML = '<div class="cele-bg"></div><div class="cele-fx">' + bits + '</div><div class="cele-body">' +
-      (team.logo || s.logo ? '<img class="cele-logo" alt="" src="' + esc(team.logo || s.logo) + '">' : '') +
+      (team.logo || s.logo ? '<img class="cele-logo" alt="" src="' + esc(sizedLogo(team.logo || s.logo, 340)) + '">' : '') +
       '<div class="cele-t' + (ev.title.length > 11 ? ' long' : '') + '">' + esc(ev.title) + '</div><div class="cele-team">' + esc(team.name || s.name) + '</div>' +
       '<div class="cele-line">' + esc(line) + '</div>' + (ev.sub ? '<div class="cele-sub">' + esc(ev.sub) + '</div>' : '') + '</div>';
     stage.appendChild(el);
@@ -343,11 +356,13 @@
   }
   /* ---------- pixel-art logos ---------- */
   var pixCache = {};  // logo URL -> pixelated data URL, or 1 while loading
-  function pixSrc(url) { return typeof pixCache[url] === 'string' ? pixCache[url] : url; }
-  function smallLogo(url) {
-    var m = /^https:\/\/a\.espncdn\.com(\/i\/[^?]+)$/.exec(url);
-    return m ? 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=48&h=48' : url;
+  function pixSrc(url) { return typeof pixCache[url] === 'string' ? pixCache[url] : smallLogo(url); }  // small version until the pixel art is ready
+  // ESPN's image resizer: ask for a logo at the size it's shown instead of the 500x500 original (less memory on Fire TV).
+  function sizedLogo(url, px) {
+    var m = /^https:\/\/a\.espncdn\.com(\/i\/[^?]+)$/.exec(url || '');
+    return m ? 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=' + px + '&h=' + px : url;
   }
+  function smallLogo(url) { return sizedLogo(url, 48); }
   // Shrink each logo to a 12x12 grid with hard alpha edges, and lift very dark colors so they still read on a
   // black LED panel. The ticker draws it back up with image-rendering: pixelated, one logo pixel per LED.
   function loadPixel(url) {
@@ -516,7 +531,7 @@
       var status = g.state === 'pre' ? timeLabel(g.date) + (g.tv ? ' · ' + g.tv : '') : g.detail;
       var row = function (s) {
         return '<div class="tm' + (s.f ? ' me' : '') + (g.state === 'post' && s.winner ? ' won' : '') + '">' +
-          (s.logo ? '<img class="gl" alt="" src="' + esc(s.logo) + '">' : '<span class="gl"></span>') +
+          (s.logo ? '<img class="gl" alt="" src="' + esc(sizedLogo(s.logo, 96)) + '">' : '<span class="gl"></span>') +
           '<span class="gn">' + (s.rank ? '<span class="tk-rk">' + s.rank + '</span>' : '') + esc(s.name) + '</span>' +
           (g.state === 'pre' ? '' : '<span class="sc">' + num(s.score) + '</span>') + '</div>';
       };
@@ -540,5 +555,15 @@
     update();
   }
 
-  window.Scores = { setTeams: setTeams, attach: attach, boardHTML: boardHTML, demo: demo, refresh: function () { lastNews = 0; tick(); } };
+  function setOptions(o) {
+    var big = !!(o && o.bigGames !== false);
+    if (big === options.bigGames) return;
+    options.bigGames = big;
+    // Drop or re-fetch the other teams' games on the next poll.
+    for (var id in games) if (games[id].big) delete games[id];
+    lastBoard = {};
+    if (followed.length) { clearTimeout(pollTimer); tick(); }
+  }
+
+  window.Scores = { setTeams: setTeams, setOptions: setOptions, attach: attach, boardHTML: boardHTML, demo: demo, refresh: function () { lastNews = 0; tick(); } };
 })();

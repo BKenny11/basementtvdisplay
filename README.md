@@ -14,15 +14,23 @@ The sheet must be shared as **Anyone with the link → Viewer** (Share button �
 
 | Tab | Columns | Notes |
 |---|---|---|
-| **Taps** | Beer, Brewery, Style, ABV %, Price, Kicked | One row per tap, top to bottom. Tap numbers follow the row order. Tick **Kicked** to cross a beer out. Rows with no Beer are skipped. |
-| **Menu** | Section, Item, Price, Description, Hide | Rows with the same Section are grouped together, in the order each section first appears. Tick **Hide** to keep an item off the TV without deleting it. |
+| **Taps** | Beer, Brewery, Style, ABV %, Price, Kicked, Flavors, Hide | One row per beer or seltzer, top to bottom; numbers follow the row order. Tick **Kicked** to cross one out, or **Hide** to keep it off the TV without deleting it. **Flavors** (comma-separated, e.g. *Black Cherry, Natural Lime*) show as colored chips. Rows with no Beer are skipped. |
+| **Menu** | Section, Item, Price, Description, Hide, Ingredients, Glass | Rows with the same Section are grouped together, in the order each section first appears. Tick **Hide** to keep an item off the TV without deleting it. A section whose items have **Ingredients** (comma-separated) shows as cocktail cards: name, Description as the tagline, the ingredient list, and a glass illustration. **Glass** picks it: *Coupe, Martini, Rocks, Highball, Copper mug, Wine, Flute, Margarita, Hot mug* or *Shot*; blank or *Auto* chooses from the drink (a Mule gets the copper mug, a Spritz the wine glass, a whiskey ginger a highball). The drink inside is tinted from the ingredients. |
 | **Teams** | League, Team, Celebrate | The teams to follow in the scores ticker and on the scoreboard. Pick the league from the dropdown and type the team however you like: *Bills*, *BUF*, *Buffalo Bills*, or *Buffalo*. **Celebrate** is ticked by default; untick it to follow a team without the animations. |
-| **Settings** | Setting, Value | **Bar name**, **Tagline**, and **Screen**, which can be *Menu*, *Menu + scores ticker*, or *Scoreboard*. |
+| **Settings** | Setting, Value | **Bar name**, **Tagline**, **Screen** (*Menu*, *Menu + scores ticker* or *Scoreboard*), **Theme** (*Beach* or *Thanksgiving*), **Drinks heading** (the left board title, default *On Tap*), and **Other big games** (*Yes*/*No*: playoff and Top 25 games on the ticker). |
 
 Tips:
+- Both menu boards shrink their type automatically when they fill up, so up to six drinks and three cocktails fit without "+ more".
 - Keep the tab names and header names as they are. You can reorder the columns, though.
 - The text columns are set to Plain text so values like `5.1` and `$6` show on the TV exactly as you type them. If you add a column, set it to Format → Number → Plain text too.
 - The checkboxes cover the first 40 tap rows, 60 menu rows and 29 team rows. Typing `TRUE` or `yes` in those columns works too.
+
+## Themes
+
+**Theme** on the Settings tab switches the look; add `?theme=thanksgiving` or `?theme=beach` to the address to preview one without changing the sheet.
+
+- **Beach** (default): sky and surf over sand, green pub chalkboards.
+- **Thanksgiving**: an autumn sunset over a harvest table (roast turkey, wine, mashed potatoes, corn, pumpkin pie and a football), fall leaves drifting behind espresso chalkboards, harvest-gold lettering. The artwork is inline SVG in `themes.js`. The LED ticker and score celebrations work the same in both.
 
 ## Live scores
 
@@ -73,6 +81,12 @@ Remote shortcuts on the display:
 - **Up / Down**: shrink or grow the edge margin, so your TV doesn't crop the edges of the picture. A dashed gold outline shows the edge while you adjust. The setting is saved on the FireStick. It starts at 5%; you can also set it in the address, e.g. `…/basementtvdisplay/?inset=4`.
 
 On a phone or tablet, an **Edit menu** button in the corner opens the sheet.
+
+## Security notes
+
+- The repo holds no keys or passwords. The site only *reads* the Google Sheet, through Google's public CSV export; it has no way to write to it.
+- Keep the sheet shared as **Anyone with the link → Viewer**. Anyone with the link (it's in this repo) can read the menu and team list, but only the owner can edit. Never switch it to Editor.
+- Everything from the sheet and ESPN is escaped before it reaches the page, and a Content-Security-Policy in `index.html` only allows this site's own scripts, data from the sheet and ESPN, and images from ESPN's CDN. If you add a new data or image source, add it to that policy too.
 
 ## Running locally
 
