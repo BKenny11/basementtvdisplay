@@ -72,12 +72,13 @@ Press **Fast-Forward** on the remote to play a sample celebration.
 
 1. Open **Silk Browser**, go to `https://bkenny11.github.io/basementtvdisplay/` and bookmark it.
 2. Press **Select/OK** on the remote to go fullscreen.
-3. To keep the screensaver from covering the menu, go to **Settings → Display & Sounds → Screensaver → Start Time → Never**.
+3. The page keeps the screensaver and ambient mode away by itself (`keepawake.js`): it asks for a screen wake lock and plays a tiny, invisible, muted video stream, which Fire TV treats like a video playing. Press **Rewind** to see which is working. If your Fire TV has a screensaver setting, setting it to **Never** under Settings → Display & Sounds doesn't hurt.
 
 Remote shortcuts on the display:
 - **Select / OK**: toggle fullscreen
 - **Play / Pause**: re-check the sheet and scores now
 - **Fast-Forward**: play a sample score celebration
+- **Rewind**: show whether the screensaver is being held off
 - **Up / Down**: shrink or grow the edge margin, so your TV doesn't crop the edges of the picture. A dashed gold outline shows the edge while you adjust. The setting is saved on the FireStick. It starts at 5%; you can also set it in the address, e.g. `…/basementtvdisplay/?inset=4`.
 
 On a phone or tablet, an **Edit menu** button in the corner opens the sheet.

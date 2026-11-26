@@ -288,3 +288,7 @@ body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 .col.dense2 .ck-i{margin-top:4px;gap:2px 10px;grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
 .col.dense2 .ck-i li{font-size:15px;padding-left:14px}
 .col.dense2 .ck-i li::before{width:6px;height:6px}
+
+/* keepawake.js: the tiny streaming video that holds off the TV's screensaver. Kept on-screen (Chromium needs the
+   page visible and won't play an off-screen muted video) but practically invisible in the overscan corner. */
+.keepawake{position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:50}

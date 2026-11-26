@@ -309,12 +309,13 @@
     var req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (req) { try { var p = req.call(el); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
-  var wakeLock = null;
-  function keepAwake() {
-    if (!navigator.wakeLock || document.visibilityState !== 'visible' || wakeLock) return;
-    navigator.wakeLock.request('screen').then(function (l) {
-      wakeLock = l; l.addEventListener('release', function () { wakeLock = null; });
-    }, function () {});
+  // Screensaver prevention lives in keepawake.js.
+  function keepAwake() { if (window.KeepAwake) KeepAwake.start(); }
+  function awakeStatus() {
+    if (!window.KeepAwake) return;
+    var s = KeepAwake.status();
+    toast(s.video || s.wakeLock ? 'Screen kept awake: ' + [s.video && 'video stream', s.wakeLock && 'wake lock'].filter(Boolean).join(' + ') :
+      'Keep-awake not active' + (s.error ? ' (' + s.error + ')' : '') + '. Press Select.');
   }
   document.addEventListener('keydown', function (e) {
     // Fire TV remote: Select/OK arrives as Enter, Play/Pause as MediaPlayPause (179).
@@ -324,11 +325,12 @@
     }
     // Fast-forward plays a sample score celebration.
     else if (e.key === 'MediaFastForward' || e.keyCode === 228 || e.key === 'c') { e.preventDefault(); if (window.Scores) Scores.demo(); }
+    // Rewind shows whether the screensaver is being held off.
+    else if (e.key === 'MediaRewind' || e.keyCode === 227 || e.key === 'k') { e.preventDefault(); keepAwake(); awakeStatus(); }
     // Up grows the picture (less margin), Down shrinks it, to dial in the TV's overscan.
     else if (e.key === 'ArrowUp' || e.keyCode === 38) { e.preventDefault(); nudgeInset(-0.5); }
     else if (e.key === 'ArrowDown' || e.keyCode === 40) { e.preventDefault(); nudgeInset(0.5); }
   });
-  document.addEventListener('visibilitychange', keepAwake);
 
   /* ---------- boot ---------- */
   window.addEventListener('resize', fit);
@@ -342,5 +344,6 @@
   var cached = loadCache();
   if (cached && cached.taps) { state = cached; current = JSON.stringify(cached); }
   render();
-  poll().then(keepAwake);
+  keepAwake();
+  poll();
 })();
