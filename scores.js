@@ -6,9 +6,14 @@
   var LIVE_POLL_MS = 30 * 1000, IDLE_POLL_MS = 60 * 1000;
   var NEWS_MS = 10 * 60 * 1000, SCHEDULE_MS = 3 * 3600 * 1000, BIG_ONLY_MS = 5 * 60 * 1000;
   var MAX_BIG = 12, NEWS_PER_TEAM = 2, NEWS_MAX = 10, BOARD_MAX = 12;
-  // The marquee jumps one LED column (3px, matching the dot grid in style.css) at a time, like a bar sign.
-  var TICKER_PX_PER_S = 75, TICKER_STEP_PX = 3, LOGO_PX = 12;
+  // The marquee jumps one LED column (3px, matching the dot grid in style.css and LED_PX in app.js) at a time,
+  // like a bar sign. The jump rate is locked to the screen's refresh rate (every 2 frames at 60Hz) so every
+  // step lasts the same number of frames; a rate that doesn't divide the refresh rate reads as stutter.
+  var TICKER_STEPS_PER_S = 30, TICKER_STEP_PX = 3, LOGO_PX = 12;
   var CELEBRATION_MS = 9000;
+  // Fire TV sticks have weak GPUs; app.js tags them 'lite' so glows are dropped and confetti thinned out.
+  var LITE = document.documentElement.classList.contains('lite');
+  var REDUCED_MOTION = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   var LEAGUES = [
     { key: 'nfl', label: 'NFL', path: 'football/nfl', sport: 'football', names: ['nfl'] },
@@ -37,6 +42,7 @@
   var pollTimer = null, polling = false;
   var slots = {};             // { stage, ticker, label, board }
   var tickerSig = '', pendingTicker = null, tickerIsPlaceholder = false;
+  var tickerAnim = null, patched = {}, boardCache = '', labelCache = '';
   var queue = [], showing = false;
 
   function esc(x) {
@@ -277,7 +283,7 @@
     if (c2.toLowerCase() === c1.toLowerCase() || c2.toLowerCase() === '#ffffff') c2 = '#e6b85c';
     var line = g.away.abbr + ' ' + num(g.away.score) + '  –  ' + num(g.home.score) + ' ' + g.home.abbr;
     var bits = '', colors = [c1, c2, '#e6b85c', '#ffffff'];
-    for (var i = 0; i < 70; i++) {
+    for (var i = 0, n = LITE ? 20 : 40; i < n; i++) {
       bits += '<i style="left:' + (Math.random() * 100).toFixed(1) + '%;background:' + colors[i % 4] +
         ';animation-delay:' + (Math.random() * 2.2).toFixed(2) + 's;animation-duration:' + (2.6 + Math.random() * 2.4).toFixed(2) + 's"></i>';
     }
@@ -415,13 +421,15 @@
     var items = tickerItems(), sig = items.map(function (i) { return i.key; }).join('|');
     if (slots.label) {
       var live = anyLive();
-      slots.label.innerHTML = live ? '<span class="tk-dot"></span>Live' : news.length && !sortedGames().length ? 'News' : 'Scores';
-      slots.label.classList.toggle('live', live);
+      var label = live ? '<span class="tk-lt"><span class="tk-dot"></span>Live</span>' : news.length && !sortedGames().length ? 'News' : 'Scores';
+      if (label !== labelCache) { labelCache = label; slots.label.innerHTML = label; slots.label.classList.toggle('live', live); }
     }
-    // Same items as now: patch the scores in place so the ticker keeps scrolling smoothly.
+    // Same items as now: patch only the scores that changed, in place, so the ticker keeps scrolling smoothly
+    // and the GPU doesn't have to redraw untouched parts of the strip.
     if (sig === tickerSig) {
       items.forEach(function (it) {
-        if (!it.gid) return;
+        if (!it.gid || patched[it.gid] === it.html) return;
+        patched[it.gid] = it.html;
         var nodes = tk.querySelectorAll('[data-g="' + it.gid + '"]');
         for (var i = 0; i < nodes.length; i++) nodes[i].innerHTML = it.html;
       });
@@ -430,8 +438,7 @@
     }
     // Different items: swap them in when the scroll loops back around, or right away if the ticker is empty.
     pendingTicker = { sig: sig, items: items };
-    var track = tk.firstChild;
-    if (!track || tickerIsPlaceholder || getComputedStyle(track).animationName === 'none') applyTicker();
+    if (!tk.firstChild || tickerIsPlaceholder || !tickerAnim) applyTicker();
   }
   function applyTicker() {
     var tk = slots.ticker, p = pendingTicker;
@@ -440,6 +447,8 @@
     tickerSig = p.sig;
     // Status messages ("Checking scores…") are replaced as soon as real items arrive instead of waiting for the loop.
     tickerIsPlaceholder = p.items.length === 1 && !p.items[0].gid && /^(wait|empty|quiet)$/.test(p.items[0].key);
+    patched = {};
+    p.items.forEach(function (it) { if (it.gid) patched[it.gid] = it.html; });
     var one = p.items.map(function (it) {
       return '<span class="tk-it"' + (it.gid ? ' data-g="' + it.gid + '"' : '') + '>' + it.html + '</span><span class="ti-d"></span>';
     }).join('');
@@ -453,10 +462,49 @@
     var w = run.offsetWidth, pad = (TICKER_STEP_PX - w % TICKER_STEP_PX) % TICKER_STEP_PX;
     if (pad) { run.style.paddingRight = pad + 'px'; w += pad; }
     track.appendChild(run.cloneNode(true)).setAttribute('aria-hidden', 'true');
-    track.style.animationDuration = Math.max(20, w / TICKER_PX_PER_S) + 's';
-    track.style.animationTimingFunction = 'steps(' + Math.round(w / TICKER_STEP_PX) + ')';
-    track.addEventListener('animationiteration', applyTicker);
+    scroll(track, w);
     pixelate(tk);
+  }
+
+  /* ---------- marquee motion ---------- */
+  // The screen's frame interval, measured from requestAnimationFrame and snapped to a common refresh rate.
+  var frameMs = 1000 / 60;
+  (function measureRefresh() {
+    var deltas = [], prev = null;
+    function f(t) {
+      if (prev !== null) deltas.push(t - prev);
+      prev = t;
+      if (deltas.length < 90) { requestAnimationFrame(f); return; }
+      deltas.sort(function (a, b) { return a - b; });
+      var hz = 1000 / deltas[deltas.length >> 1], rates = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144];
+      var best = rates.reduce(function (a, b) { return Math.abs(b - hz) < Math.abs(a - hz) ? b : a; });
+      frameMs = 1000 / best;
+    }
+    requestAnimationFrame(f);
+  })();
+  // Scroll one run's width in whole LED steps, then loop (picking up any new items at the seam). This uses the
+  // Web Animations API so it runs on the GPU compositor, unaffected by score polling on the main thread, and each
+  // step lasts an exact whole number of frames.
+  function scroll(track, w) {
+    if (tickerAnim) { tickerAnim.onfinish = null; tickerAnim.cancel(); tickerAnim = null; }
+    if (REDUCED_MOTION) return;
+    var steps = Math.round(w / TICKER_STEP_PX);
+    var framesPerStep = Math.max(1, Math.round(1000 / frameMs / TICKER_STEPS_PER_S));
+    var duration = steps * framesPerStep * frameMs;
+    if (!track.animate) {
+      track.style.animation = 'tk ' + duration + 'ms steps(' + steps + ') infinite';
+      track.addEventListener('animationiteration', applyTicker);
+      tickerAnim = { cancel: function () {} };
+      return;
+    }
+    var a = track.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(' + (-w) + 'px,0,0)' }],
+      { duration: duration, easing: 'steps(' + steps + ')', fill: 'forwards' });
+    // Start half a frame past the current frame so step boundaries land mid-frame rather than on a frame edge,
+    // where tiny timing jitter would make steps randomly one frame short or long.
+    var now = document.timeline && document.timeline.currentTime;
+    if (now != null) a.startTime = now + frameMs / 2;
+    a.onfinish = function () { if (pendingTicker) applyTicker(); else scroll(track, w); };
+    tickerAnim = a;
   }
   function boardHTML() {
     // Up to six big cards; busier days switch to a denser 4x3 grid of up to twelve.
@@ -479,13 +527,16 @@
   }
   function update() {
     renderTicker();
-    if (slots.board) slots.board.innerHTML = boardHTML();
+    // Only touch the scoreboard when something on it changed; rebuilding it reloads every logo and repaints the board.
+    if (slots.board) { var h = boardHTML(); if (h !== boardCache) { boardCache = h; slots.board.innerHTML = h; } }
   }
   // Called after every full render of the display, since that replaces the ticker and board elements.
   function attach(s) {
     slots = s || {};
     tickerSig = '';
     pendingTicker = null;
+    boardCache = '';
+    labelCache = '';
     update();
   }
 

@@ -9,6 +9,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Fraunces:ital,wght@0,700;0,900;1,600&family=VT323&family=Barlow:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Fire TV sticks (Silk, model codes starting "AFT") get a lighter look: no glows, less confetti. ?lite=1 forces it, ?lite=0 turns it off.
+    (function () {
+      var q = /[?&]lite=([01])/.exec(location.search);
+      if (q ? q[1] === '1' : /AFT|Silk/i.test(navigator.userAgent)) document.documentElement.className += ' lite';
+    })();
+  </script>
 </head>
 <body>
   <div id="app"></div>

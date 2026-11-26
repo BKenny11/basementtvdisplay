@@ -9,6 +9,7 @@
   var CACHE_KEY = 'basementtv.last';
   var INSET_KEY = 'basementtv.inset';
   var INSET_DEFAULT = 5, INSET_MAX = 15;
+  var LED_PX = 3;  // the ticker's LED pitch in stage pixels (TICKER_STEP_PX in scores.js, the 3px dot grid in style.css)
   var MODES = { 'menu': 'menu', 'menu + scores ticker': 'ticker', 'ticker': 'ticker', 'scoreboard': 'scores', 'scores': 'scores' };
 
   var inset = loadInset();
@@ -170,9 +171,14 @@
     var s = document.getElementById('screen'), st = document.getElementById('stage');
     if (!s || !st) return;
     // Shrink the stage by the overscan margin on every side so TVs that crop the picture don't cut off the edges.
-    var f = 1 - 2 * inset / 100;
-    var k = Math.min(s.clientWidth * f / 1280, s.clientHeight * f / 720);
-    st.style.transform = 'translate(-50%,-50%) scale(' + k + ')';
+    var f = 1 - 2 * inset / 100, W = s.clientWidth, H = s.clientHeight, dpr = window.devicePixelRatio || 1;
+    var k = Math.min(W * f / 1280, H * f / 720);
+    // Shrink a hair so one LED is a whole number of screen pixels, and put the stage on the pixel grid. The
+    // ticker then steps in exact pixels instead of smearing each step across a fraction of one.
+    var led = Math.floor(LED_PX * k * dpr);
+    if (led >= 1) k = led / (LED_PX * dpr);
+    var x = Math.round((W - 1280 * k) / 2 * dpr) / dpr, y = Math.round((H - 720 * k) / 2 * dpr) / dpr;
+    st.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + k + ')';
   }
   function loadInset() {
     var q = /[?&]inset=([\d.]+)/.exec(location.search), v;

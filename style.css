@@ -25,8 +25,8 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font-family:v
 body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 /* The area outside the stage sits in the TV's overscan zone; dark wood reads as a frame if any of it shows. */
 #screen{position:relative;height:100vh;overflow:hidden;background:var(--grain),linear-gradient(#4a2d17,#3a2414);background-size:2400px 260px,auto}
-.stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center;
-  display:flex;flex-direction:column;overflow:hidden;border-radius:6px;
+.stage{position:absolute;left:0;top:0;width:1280px;height:720px;transform-origin:0 0;
+  display:flex;flex-direction:column;overflow:hidden;
   background:var(--speck),radial-gradient(ellipse at 50% 0%,#f3e2bb,var(--sand) 55%,#d8bb82)}
 .stage.calib{outline:4px dashed var(--accent);outline-offset:-4px}
 
@@ -82,17 +82,18 @@ body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 .tick{--led:#ffc04d;--led-hot:#fff6dc;--led-me:#9dff70;--led-red:#ff5a44;--led-off:rgba(255,170,70,.07);
   height:60px;flex:none;display:flex;align-items:stretch;gap:8px;padding:6px 10px;background:var(--wood);
   box-shadow:0 -3px 10px rgba(70,45,10,.35),inset 0 2px 0 rgba(255,220,170,.25)}
-.tk-l,.tk-w{position:relative;border-radius:3px;overflow:hidden;
+.tk-l,.tk-w{position:relative;overflow:hidden;
   background:radial-gradient(circle,var(--led-off) 0 1px,transparent 1.2px) 0 0/3px 3px,#0a0806;
   box-shadow:inset 0 0 0 2px #1d140b,inset 0 0 12px rgba(0,0,0,.9),0 1px 0 rgba(255,220,170,.25)}
 /* The dot mask: dark gaps between LEDs, over text, logos and glow alike. */
 .tk-l::after,.tk-w::after{content:"";position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(circle,transparent 0 1.1px,rgba(10,8,6,.7) 1.5px) 0 0/3px 3px}
-.tk-l{display:flex;align-items:center;gap:9px;padding:0 15px;color:var(--led);white-space:nowrap;
+  background:radial-gradient(circle,transparent 0 1.1px,rgba(10,8,6,.7) 1.5px) 0 0/3px 3px;will-change:transform}
+.tk-l{flex:none;width:168px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--led);white-space:nowrap;
   font:400 39px/1 "VT323",monospace;letter-spacing:3px;text-transform:uppercase;text-shadow:0 0 6px rgba(255,180,58,.75)}
-.tk-l.live{color:var(--led-red);text-shadow:0 0 6px rgba(255,75,55,.8);animation:led-blink 1.2s steps(1) infinite}
+.tk-l.live{color:var(--led-red);text-shadow:0 0 6px rgba(255,75,55,.8)}
+.tk-l.live .tk-lt{display:flex;align-items:center;gap:9px;animation:led-blink 1.2s steps(1) infinite}
 .tk-w{flex:1;min-width:0;display:flex;align-items:center}
-.track{display:flex;width:max-content;animation:tk 60s linear infinite}
+.track{display:flex;width:max-content;will-change:transform;backface-visibility:hidden}
 .run{display:flex;flex:none;align-items:center}
 .tk-it{display:flex;align-items:center;gap:12px;white-space:nowrap;font:400 39px/1 "VT323",monospace;letter-spacing:3px;
   text-transform:uppercase;color:var(--led);text-shadow:0 0 6px rgba(255,180,58,.7)}
@@ -110,12 +111,14 @@ body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 .tk-at{opacity:.7}
 .tk-st{opacity:.8;margin-left:3px}
 .tk-st.on{opacity:1;color:var(--led-red);text-shadow:0 0 6px rgba(255,75,55,.8)}
-.tk-l .tk-dot{width:12px;height:12px;border-radius:0;background:currentColor;box-shadow:0 0 6px currentColor;animation:none}
-.tk-dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff5a3c;box-shadow:0 0 0 0 rgba(255,90,60,.7);animation:pulse 1.6s ease-out infinite}
-@keyframes pulse{70%{box-shadow:0 0 0 10px rgba(255,90,60,0)}100%{box-shadow:0 0 0 0 rgba(255,90,60,0)}}
-@keyframes led-blink{50%{color:#5a1a12;text-shadow:none}}
+.tk-dot{position:relative;display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff5a3c}
+.tk-dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:#ff5a3c;animation:pulse 1.6s ease-out infinite}
+.tk-l .tk-dot{border-radius:0;background:currentColor;box-shadow:0 0 6px currentColor}
+.tk-l .tk-dot::after{display:none}
+@keyframes pulse{from{transform:scale(1);opacity:.7}70%,to{transform:scale(2.6);opacity:0}}
+@keyframes led-blink{50%{opacity:.2}}
 @keyframes tk{to{transform:translateX(-50%)}}
-@media (prefers-reduced-motion:reduce){.track{animation:none}}
+@media (prefers-reduced-motion:reduce){.track{animation:none}.tk-dot::after,.tk-l.live .tk-lt{animation:none}}
 
 /* Scoreboard */
 .gwrap{height:calc(100% - 48px)}
@@ -175,3 +178,10 @@ body.tv{height:100%;padding:0;overflow:hidden;cursor:none;background:#3a2414}
 .toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 26px;border-radius:999px;background:var(--panel);
   border:2px solid var(--accent);color:var(--fg);font:600 22px var(--body);transition:opacity .4s;pointer-events:none;z-index:20;white-space:nowrap}
 
+
+/* Lite mode (Fire TV, see index.html): same look minus blurred glows, which weak GPUs redraw slowly. */
+.lite .tk-l,.lite .tk-it,.lite .tk-it *{text-shadow:none!important}
+.lite .ti-d,.lite .tk-lg,.lite .tk-tag,.lite .tk-l .tk-dot,.lite .game.live{box-shadow:none}
+.lite .cele-bg{box-shadow:none}
+.lite .cele-logo{filter:none}
+.lite .cele-t{text-shadow:0 6px 0 rgba(0,0,0,.35)}

@@ -26,7 +26,7 @@ Tips:
 
 ## Live scores
 
-Set **Screen** to *Menu + scores ticker* or *Scoreboard*, and list your teams on the **Teams** tab. The ticker is styled as a bar LED sign: amber dot-matrix text, your teams in green, live status in red, pixel-art logos, and a scroll that steps one LED column at a time (speed and step size are `TICKER_PX_PER_S` and `TICKER_STEP_PX` at the top of `scores.js`). Leagues: NFL, NBA, WNBA, MLB, NHL, College Football, College Basketball, MLS and Premier League.
+Set **Screen** to *Menu + scores ticker* or *Scoreboard*, and list your teams on the **Teams** tab. The ticker is styled as a bar LED sign: amber dot-matrix text, your teams in green, live status in red, pixel-art logos, and a scroll that steps one LED column at a time, 30 steps a second (every 2 frames on a 60Hz screen, so every step is the same length; `TICKER_STEPS_PER_S` and `TICKER_STEP_PX` at the top of `scores.js`). Fire TV sticks automatically get a lighter mode without the glow effects; add `?lite=1` or `?lite=0` to the address to force it on or off. Leagues: NFL, NBA, WNBA, MLB, NHL, College Football, College Basketball, MLS and Premier League.
 
 - **While one of your teams is playing,** the ticker label turns red (**Live**) and the ticker shows only scores, checked every **30 seconds**. Scores update in place without restarting the scroll.
 - **When none of your teams is playing,** it checks every **60 seconds** and shows today's games and finals, each team's next game, and recent headlines about your teams (refreshed every 10 minutes, up to 3 per team from the last 4 days).
